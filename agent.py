@@ -93,6 +93,17 @@ class TradingAgent:
             # in de geschiedenis - anders "vergeet" Claude wat het net deed.
             self.messages.append({"role": "assistant", "content": response.content})
 
+            # Laat live zien waar Claude mee bezig is. Zonder dit blijft het
+            # scherm helemaal stil totdat ALLES klaar is - bij een vraag die
+            # meerdere zoekopdrachten en/of trades achter elkaar kost, kan
+            # dat minutenlang aanvoelen alsof er niks gebeurt.
+            for block in response.content:
+                if block.type == "server_tool_use" and block.name == "web_search":
+                    query = block.input.get("query", "")
+                    print(f"  [ZOEKT OP INTERNET] {query}")
+                elif block.type == "tool_use":
+                    print(f"  [TOOL] {block.name}({block.input})")
+
             if response.stop_reason != "tool_use":
                 # Claude is klaar met tools; pak de tekst uit het antwoord.
                 text_blocks = [block.text for block in response.content if block.type == "text"]
