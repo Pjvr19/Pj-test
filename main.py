@@ -6,7 +6,14 @@ Gebruik:
 
 Typ 'stop', 'exit' of 'quit' om te stoppen.
 """
+from colorama import Fore, Style, init as init_colorama
+
 from agent import TradingAgent
+
+# Zorgt dat kleurcodes ook werken in het klassieke Windows-opdrachtvenster
+# (niet alleen in moderne terminals), en dat kleur na elke print() weer
+# automatisch terug naar normaal gaat.
+init_colorama(autoreset=True)
 
 
 def main():
@@ -16,7 +23,11 @@ def main():
     agent = TradingAgent()
 
     while True:
-        user_input = input("Jij: ").strip()
+        # We printen "Jij: " apart (met kleur) i.p.v. als prompt-tekst aan
+        # input() mee te geven - op Windows gaat kleur in een input()-prompt
+        # namelijk niet altijd goed, via een losse print() wel betrouwbaar.
+        print(f"{Fore.CYAN}Jij: {Style.RESET_ALL}", end="", flush=True)
+        user_input = input().strip()
 
         if user_input.lower() in ("stop", "exit", "quit"):
             print("Tot ziens!")
@@ -26,7 +37,7 @@ def main():
             continue
 
         antwoord = agent.send(user_input)
-        print(f"\nAgent: {antwoord}\n")
+        print(f"\n{Fore.GREEN}Agent:{Style.RESET_ALL} {antwoord}\n")
 
 
 if __name__ == "__main__":
