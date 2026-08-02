@@ -59,7 +59,12 @@ class TradingAgent:
         while True:
             response = self.client.messages.create(
                 model=config.MODEL,
-                max_tokens=1024,
+                # Claude Opus 5 denkt standaard eerst intern na, en dat
+                # verbruikt ruimte uit hetzelfde budget als het uiteindelijke
+                # antwoord. Bij complexe vragen (meerdere munten analyseren
+                # en verhandelen) is 1024 te weinig - dan raakt het budget op
+                # tijdens het nadenken en blijft er niks over voor de tekst.
+                max_tokens=4096,
                 system=SYSTEM_PROMPT,
                 tools=TOOLS,
                 messages=self.messages,
@@ -72,7 +77,19 @@ class TradingAgent:
             if response.stop_reason != "tool_use":
                 # Claude is klaar met tools; pak de tekst uit het antwoord.
                 text_blocks = [block.text for block in response.content if block.type == "text"]
-                return "\n".join(text_blocks)
+                antwoord = "\n".join(text_blocks)
+
+                # Vangnet: als er toch geen tekst overblijft (bv. omdat het
+                # budget alsnog op is voor een hele grote vraag), geef een
+                # duidelijke melding in plaats van stilzwijgend niets terug
+                # te geven.
+                if not antwoord:
+                    return (
+                        "(Geen tekstantwoord ontvangen - de vraag was waarschijnlijk "
+                        "te complex voor de beschikbare ruimte. Probeer een kortere "
+                        "of specifiekere vraag, of stel 'm in kleinere stapjes.)"
+                    )
+                return antwoord
 
             # Claude wil een of meerdere tools gebruiken. Voer ze allemaal
             # uit en stuur alle resultaten in één keer terug.
