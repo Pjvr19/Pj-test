@@ -1,6 +1,9 @@
 # Nooit je echte API-key committen
 .env
 
+# Lokale (nepgeld) portfolio-staat - is runtime-data, geen code
+portfolio.json
+
 # Python
 __pycache__/
 *.pyc
