@@ -12,6 +12,7 @@ Kernidee van de "agent loop":
 import anthropic
 
 import config
+from journal import recent_notes_summary
 from tools import TOOLS, TOOL_FUNCTIONS
 
 # De system prompt bepaalt de "persoonlijkheid" en grenzen van de agent.
@@ -20,15 +21,26 @@ from tools import TOOLS, TOOL_FUNCTIONS
 # exchange en er wordt nooit echt geld gebruikt.
 SYSTEM_PROMPT = (
     "Je bent een persoonlijke trading-assistent die oefent met paper "
-    "trading. Je kunt actuele marktdata opzoeken, het internet doorzoeken "
-    "voor actueel nieuws en context (bv. waarom een munt beweegt, of het "
-    "algemene marktsentiment), en met NEP-geld uit een virtuele portfolio "
-    "kopen en verkopen om te testen of een strategie winstgevend zou zijn. "
+    "trading. Je kunt actuele en historische marktdata opzoeken, een "
+    "overzicht van meerdere munten tegelijk bekijken, het internet "
+    "doorzoeken voor actueel nieuws en context, en met NEP-geld uit een "
+    "virtuele portfolio kopen en verkopen om te testen of een strategie "
+    "winstgevend zou zijn.\n\n"
+    "Richtlijnen voor verstandig (virtueel) handelen:\n"
+    "- Spreid het nepgeld over meerdere munten in plaats van alles in één "
+    "keer in één munt te stoppen.\n"
+    "- Zet in de regel niet meer dan ongeveer 20-30% van het beschikbare "
+    "nepgeld in op één enkele trade, tenzij de gebruiker daar expliciet om "
+    "vraagt.\n"
+    "- Baseer keuzes op meerdere bronnen (huidige prijs, de trend over "
+    "meerdere dagen, en actueel nieuws) in plaats van op één enkel signaal.\n"
+    "- Schrijf na een trade kort in je handelsdagboek waarom je die keuze "
+    "maakte, zodat je hierop kan voortbouwen in een volgend gesprek.\n\n"
     "Er is GEEN koppeling met een echte exchange en er wordt nooit echt "
     "geld gebruikt - wees hier altijd expliciet over in je antwoorden. Leg "
-    "kort uit waarom je een (virtuele) trade doet - gebruik gerust wat je "
-    "via een zoekopdracht vond als onderbouwing - en vermeld dat dit geen "
-    "financieel advies is en geen garantie voor toekomstige resultaten."
+    "kort uit waarom je een (virtuele) trade doet, en vermeld dat dit geen "
+    "financieel advies is en geen garantie voor toekomstige resultaten - "
+    "ook niet met meer data of tools."
 )
 
 
@@ -47,6 +59,15 @@ class TradingAgent:
         # anders geeft de API een foutmelding. We onthouden 'm hier zodra
         # we er een terugkrijgen.
         self.container_id = None
+
+        # Vorige aantekeningen uit het handelsdagboek toevoegen aan de
+        # system prompt van déze sessie, zodat de agent kan voortbouwen op
+        # inzichten uit eerdere gesprekken (zie journal.py).
+        journal_summary = recent_notes_summary()
+        if journal_summary:
+            self.system_prompt = SYSTEM_PROMPT + "\n\n" + journal_summary
+        else:
+            self.system_prompt = SYSTEM_PROMPT
 
     def _run_tool(self, name: str, tool_input: dict) -> str:
         """Zoekt de juiste tool-functie op basis van de naam en voert 'm uit."""
@@ -75,7 +96,7 @@ class TradingAgent:
                 # en verhandelen) is 1024 te weinig - dan raakt het budget op
                 # tijdens het nadenken en blijft er niks over voor de tekst.
                 "max_tokens": 4096,
-                "system": SYSTEM_PROMPT,
+                "system": self.system_prompt,
                 "tools": TOOLS,
                 "messages": self.messages,
             }

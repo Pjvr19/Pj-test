@@ -18,6 +18,7 @@ Er zijn twee soorten tools hier:
 """
 import requests
 
+from journal import add_note as _add_journal_note
 from portfolio import (
     START_BALANCE_EUR,
     load_portfolio,
@@ -252,6 +253,141 @@ def get_portfolio_status() -> str:
     return "\n".join(lines)
 
 
+GET_PRICE_HISTORY_SCHEMA = {
+    "name": "get_price_history",
+    "description": (
+        "Haalt de koersontwikkeling van een cryptomunt op over een periode "
+        "(bv. de laatste 7 dagen), zodat je een trend kan herkennen in "
+        "plaats van alleen het huidige moment te zien. Gebruik dit om te "
+        "beoordelen of een munt over een langere periode aan het stijgen "
+        "of dalen is."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "coin_id": {
+                "type": "string",
+                "description": "CoinGecko coin-id, bv. 'bitcoin' of 'ethereum'.",
+            },
+            "days": {
+                "type": "integer",
+                "description": "Aantal dagen terugkijken, bv. 7 voor een week. Standaard 7.",
+            },
+        },
+        "required": ["coin_id"],
+    },
+}
+
+
+def get_price_history(coin_id: str, days: int = 7) -> str:
+    """Haalt historische prijsdata op via CoinGecko en geeft een samenvatting van de trend."""
+    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
+    params = {"vs_currency": "eur", "days": days}
+
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+    except requests.RequestException as e:
+        return f"Fout bij ophalen van historische data: {e}"
+
+    prices = data.get("prices")
+    if not prices:
+        return f"Geen historische data gevonden voor '{coin_id}'."
+
+    values = [point[1] for point in prices]
+    start_price = values[0]
+    end_price = values[-1]
+    min_price = min(values)
+    max_price = max(values)
+    change_pct = ((end_price - start_price) / start_price) * 100 if start_price else 0.0
+
+    return (
+        f"{coin_id} over de afgelopen {days} dagen: van {start_price:.2f} EUR naar "
+        f"{end_price:.2f} EUR ({change_pct:+.2f}%). Laagste: {min_price:.2f} EUR, "
+        f"hoogste: {max_price:.2f} EUR."
+    )
+
+
+GET_TOP_COINS_SCHEMA = {
+    "name": "get_top_coins",
+    "description": (
+        "Geeft in één keer een overzicht van de grootste cryptomunten (op "
+        "marktkapitalisatie) met hun huidige prijs en 24-uurs verandering. "
+        "Handig om snel meerdere munten met elkaar te vergelijken zonder "
+        "ze één voor één op te zoeken."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "limit": {
+                "type": "integer",
+                "description": "Hoeveel munten je wil zien (standaard 10, maximaal 50).",
+            },
+        },
+    },
+}
+
+
+def get_top_coins(limit: int = 10) -> str:
+    """Haalt de top cryptomunten op basis van marktkapitalisatie op via CoinGecko."""
+    limit = max(1, min(limit, 50))
+    url = "https://api.coingecko.com/api/v3/coins/markets"
+    params = {
+        "vs_currency": "eur",
+        "order": "market_cap_desc",
+        "per_page": limit,
+        "page": 1,
+        "price_change_percentage": "24h",
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+    except requests.RequestException as e:
+        return f"Fout bij ophalen van topmunten: {e}"
+
+    if not data:
+        return "Geen data ontvangen van CoinGecko."
+
+    lines = ["Top cryptomunten (op marktkapitalisatie):"]
+    for coin in data:
+        change = coin.get("price_change_percentage_24h")
+        change_text = f"{change:+.2f}%" if change is not None else "onbekend"
+        lines.append(f"- {coin['id']}: {coin['current_price']} EUR ({change_text} laatste 24u)")
+
+    return "\n".join(lines)
+
+
+ADD_JOURNAL_NOTE_SCHEMA = {
+    "name": "add_journal_note",
+    "description": (
+        "Schrijft een korte aantekening in het handelsdagboek - bijvoorbeeld "
+        "waarom je een bepaalde (virtuele) trade deed, of wat je leerde uit "
+        "recent nieuws. Deze aantekeningen krijg je bij het begin van een "
+        "volgend gesprek weer te zien, zodat je kan voortbouwen op eerdere "
+        "inzichten."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "note": {
+                "type": "string",
+                "description": "Korte aantekening (1-2 zinnen) over een keuze of inzicht.",
+            },
+        },
+        "required": ["note"],
+    },
+}
+
+
+def add_journal_note(note: str) -> str:
+    """Voegt een aantekening toe aan het handelsdagboek (journal.json)."""
+    _add_journal_note(note)
+    return "Aantekening opgeslagen in het handelsdagboek."
+
+
 # Web search is een "server-side" tool: Anthropic voert de zoekopdracht
 # zelf uit op hun eigen servers en levert de resultaten direct aan Claude.
 # Wij hoeven hier dus - anders dan bij onze eigen tools hierboven - geen
@@ -269,6 +405,9 @@ TOOLS = [
     BUY_CRYPTO_SCHEMA,
     SELL_CRYPTO_SCHEMA,
     GET_PORTFOLIO_STATUS_SCHEMA,
+    GET_PRICE_HISTORY_SCHEMA,
+    GET_TOP_COINS_SCHEMA,
+    ADD_JOURNAL_NOTE_SCHEMA,
     WEB_SEARCH_TOOL,
 ]
 
@@ -281,4 +420,7 @@ TOOL_FUNCTIONS = {
     "buy_crypto": buy_crypto,
     "sell_crypto": sell_crypto,
     "get_portfolio_status": get_portfolio_status,
+    "get_price_history": get_price_history,
+    "get_top_coins": get_top_coins,
+    "add_journal_note": add_journal_note,
 }
