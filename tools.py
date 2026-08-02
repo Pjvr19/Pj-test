@@ -252,16 +252,30 @@ def get_portfolio_status() -> str:
     return "\n".join(lines)
 
 
+# Web search is een "server-side" tool: Anthropic voert de zoekopdracht
+# zelf uit op hun eigen servers en levert de resultaten direct aan Claude.
+# Wij hoeven hier dus - anders dan bij onze eigen tools hierboven - geen
+# eigen Python-functie voor te schrijven. Hiermee kan de agent per gesprek
+# actueel nieuws/context van het internet opzoeken (dit kost per zoekopdracht
+# een klein extra bedrag, bovenop de normale tokenkosten).
+WEB_SEARCH_TOOL = {
+    "type": "web_search_20260209",
+    "name": "web_search",
+}
+
 # Alle tool-schema's die we aan Claude doorgeven.
 TOOLS = [
     GET_CRYPTO_PRICE_SCHEMA,
     BUY_CRYPTO_SCHEMA,
     SELL_CRYPTO_SCHEMA,
     GET_PORTFOLIO_STATUS_SCHEMA,
+    WEB_SEARCH_TOOL,
 ]
 
 # Koppelt de naam van een tool (zoals Claude die noemt) aan de Python-
-# functie die 'm daadwerkelijk uitvoert.
+# functie die 'm daadwerkelijk uitvoert. web_search staat hier bewust NIET
+# bij - dat is de server-side tool hierboven, die heeft geen eigen functie
+# nodig omdat Anthropic 'm zelf uitvoert.
 TOOL_FUNCTIONS = {
     "get_crypto_price": get_crypto_price,
     "buy_crypto": buy_crypto,
