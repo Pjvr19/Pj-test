@@ -1,0 +1,84 @@
+"""
+De agent-logica: praat met Claude via de Anthropic API, en voert tools uit
+wanneer Claude daarom vraagt (tool use / function calling).
+
+Kernidee van de "agent loop":
+1. Stuur het gesprek (inclusief system prompt en tools) naar Claude.
+2. Als Claude een tool wil gebruiken (stop_reason == "tool_use"), voeren
+   wij die tool uit en sturen het resultaat terug naar Claude.
+3. Dit herhaalt zich tot Claude geen tool meer nodig heeft en gewoon
+   tekst teruggeeft - dan zijn we klaar en geven we dat antwoord terug.
+"""
+import anthropic
+
+import config
+from tools import TOOLS, TOOL_FUNCTIONS
+
+# De system prompt bepaalt de "persoonlijkheid" en grenzen van de agent.
+# Belangrijk: we maken expliciet duidelijk dat de agent nooit zelf trades
+# uitvoert - dat is bewust zo ontworpen (read-only marktdata + advies).
+SYSTEM_PROMPT = (
+    "Je bent een persoonlijke trading-assistent. Je kunt actuele "
+    "marktdata opzoeken via je tools en op basis daarvan analyse of "
+    "suggesties geven. Je voert zelf NOOIT trades of orders uit - de "
+    "gebruiker beslist en handelt altijd zelf. Wees duidelijk over wat "
+    "een suggestie is versus een feit, en vermeld dat dit geen "
+    "financieel advies is."
+)
+
+
+class TradingAgent:
+    """Simpele agent die met Claude praat en tools kan aanroepen."""
+
+    def __init__(self):
+        self.client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        # De conversatiegeschiedenis houden we hier bij, zodat de agent
+        # eerdere berichten in het gesprek "onthoudt".
+        self.messages = []
+
+    def _run_tool(self, name: str, tool_input: dict) -> str:
+        """Zoekt de juiste tool-functie op basis van de naam en voert 'm uit."""
+        tool_function = TOOL_FUNCTIONS.get(name)
+        if tool_function is None:
+            return f"Onbekende tool: {name}"
+        return tool_function(**tool_input)
+
+    def send(self, user_message: str) -> str:
+        """
+        Stuurt een bericht van de gebruiker naar Claude, handelt eventuele
+        tool-aanroepen af, en geeft het uiteindelijke tekstantwoord terug.
+        """
+        self.messages.append({"role": "user", "content": user_message})
+
+        # Deze loop blijft draaien zolang Claude tools wil gebruiken.
+        while True:
+            response = self.client.messages.create(
+                model=config.MODEL,
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                tools=TOOLS,
+                messages=self.messages,
+            )
+
+            # Bewaar Claude's antwoord (incl. eventuele tool_use blokken)
+            # in de geschiedenis - anders "vergeet" Claude wat het net deed.
+            self.messages.append({"role": "assistant", "content": response.content})
+
+            if response.stop_reason != "tool_use":
+                # Claude is klaar met tools; pak de tekst uit het antwoord.
+                text_blocks = [block.text for block in response.content if block.type == "text"]
+                return "\n".join(text_blocks)
+
+            # Claude wil een of meerdere tools gebruiken. Voer ze allemaal
+            # uit en stuur alle resultaten in één keer terug.
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    result = self._run_tool(block.name, block.input)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    })
+
+            self.messages.append({"role": "user", "content": tool_results})

@@ -1,0 +1,8 @@
+# Nooit je echte API-key committen
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
