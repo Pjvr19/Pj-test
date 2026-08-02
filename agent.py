@@ -40,6 +40,13 @@ class TradingAgent:
         # De conversatiegeschiedenis houden we hier bij, zodat de agent
         # eerdere berichten in het gesprek "onthoudt".
         self.messages = []
+        # Sommige tools (zoals web_search met dynamische filtering) draaien
+        # intern soms een klein stukje code uit in een tijdelijke sandbox
+        # ("container"). Als zo'n actie nog niet volledig is afgerond, moet
+        # je bij het vólgende verzoek diezelfde container weer meesturen,
+        # anders geeft de API een foutmelding. We onthouden 'm hier zodra
+        # we er een terugkrijgen.
+        self.container_id = None
 
     def _run_tool(self, name: str, tool_input: dict) -> str:
         """Zoekt de juiste tool-functie op basis van de naam en voert 'm uit."""
@@ -57,18 +64,30 @@ class TradingAgent:
 
         # Deze loop blijft draaien zolang Claude tools wil gebruiken.
         while True:
-            response = self.client.messages.create(
-                model=config.MODEL,
+            # We bouwen de argumenten op in een dict, zodat we "container"
+            # alleen meesturen als we er al één hebben (de eerste keer in
+            # een gesprek meestal nog niet).
+            request_kwargs = {
+                "model": config.MODEL,
                 # Claude Opus 5 denkt standaard eerst intern na, en dat
                 # verbruikt ruimte uit hetzelfde budget als het uiteindelijke
                 # antwoord. Bij complexe vragen (meerdere munten analyseren
                 # en verhandelen) is 1024 te weinig - dan raakt het budget op
                 # tijdens het nadenken en blijft er niks over voor de tekst.
-                max_tokens=4096,
-                system=SYSTEM_PROMPT,
-                tools=TOOLS,
-                messages=self.messages,
-            )
+                "max_tokens": 4096,
+                "system": SYSTEM_PROMPT,
+                "tools": TOOLS,
+                "messages": self.messages,
+            }
+            if self.container_id:
+                request_kwargs["container"] = self.container_id
+
+            response = self.client.messages.create(**request_kwargs)
+
+            # Onthoud het container-ID als deze response er één gebruikt
+            # heeft, zodat we 'm bij het volgende verzoek weer meesturen.
+            if getattr(response, "container", None):
+                self.container_id = response.container.id
 
             # Bewaar Claude's antwoord (incl. eventuele tool_use blokken)
             # in de geschiedenis - anders "vergeet" Claude wat het net deed.
